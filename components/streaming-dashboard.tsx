@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +23,8 @@ import {
 import StreamViewer from "@/components/stream-viewer"
 import CreatorDashboard from "@/components/creator-dashboard"
 import UserProfile from "@/components/user-profile"
+import { useWeb3 } from "@/hooks/useWeb3"
+import { apiService } from "@/lib/api"
 
 interface StreamingDashboardProps {
   onBack: () => void
@@ -52,8 +54,15 @@ type DashboardView = "home" | "stream" | "create" | "profile"
 
 export default function StreamingDashboard({ onBack }: StreamingDashboardProps) {
   const [currentView, setCurrentView] = useState<DashboardView>("home")
-  const [isWalletConnected, setIsWalletConnected] = useState(false)
+  const { isConnected, address, balance, connectWallet, error } = useWeb3()
   const [user, setUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    if (isConnected && address) {
+      // Fetch user data from API
+      apiService.getUser(address).then(setUser).catch(console.error)
+    }
+  }, [isConnected, address])
   const [selectedStream, setSelectedStream] = useState<Stream | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -101,29 +110,12 @@ export default function StreamingDashboard({ onBack }: StreamingDashboardProps) 
     },
   ]
 
-  const connectWallet = async () => {
-    // Simulate wallet connection
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-
-    const mockUser: User = {
-      address: "0x742d35Cc6634C0532925a3b8D4C0532925a3b8D4",
-      balance: 1250.5,
-      nfts: 12,
-      followers: 1456,
-      following: 234,
-      totalEarned: 3420.75,
-    }
-
-    setUser(mockUser)
-    setIsWalletConnected(true)
-  }
-
   const watchStream = (stream: Stream) => {
     setSelectedStream(stream)
     setCurrentView("stream")
   }
 
-  if (!isWalletConnected) {
+  if (!isConnected) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
         <div className="max-w-md mx-auto text-center">
@@ -214,7 +206,7 @@ export default function StreamingDashboard({ onBack }: StreamingDashboardProps) 
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg">
                 <Coins className="w-4 h-4 text-yellow-400" />
-                <span className="text-white font-semibold">${user?.balance.toFixed(2)} USDC</span>
+                <span className="text-white font-semibold">${balance.toFixed(2)} USDC</span>
               </div>
 
               <Button

@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  address      String   @unique
+  username     String?
+  avatar       String?
+  balance      Float    @default(0)
+  nfts         Int      @default(0)
+  totalEarned  Float    @default(0)
+  isStreamer   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  streams      Stream[]
+  sentTips     Tip[]    @relation("TipSender")
+  receivedTips Tip[]    @relation("TipReceiver")
+  followers    Follow[] @relation("UserFollowers")
+  following    Follow[] @relation("UserFollowing")
+  nftTokens    NFT[]
+
+  @@map("users")
+}
+
+model Stream {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  category      String
+  thumbnail     String?
+  isLive        Boolean  @default(false)
+  viewers       Int      @default(0)
+  creatorAddress String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  creator       User     @relation(fields: [creatorAddress], references: [address])
+  tips          Tip[]
+  chatMessages  ChatMessage[]
+
+  @@map("streams")
+}
+
+model Tip {
+  id          String   @id @default(cuid())
+  fromAddress String
+  toAddress   String
+  amount      Float
+  txHash      String   @unique
+  status      String   @default("pending") // pending, confirmed, failed
+  streamId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  sender      User     @relation("TipSender", fields: [fromAddress], references: [address])
+  receiver    User     @relation("TipReceiver", fields: [toAddress], references: [address])
+  stream      Stream?  @relation(fields: [streamId], references: [id])
+
+  @@map("tips")
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerAddress String
+  followingAddress String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  follower    User     @relation("UserFollowers", fields: [followerAddress], references: [address])
+  following   User     @relation("UserFollowing", fields: [followingAddress], references: [address])
+
+  @@unique([followerAddress, followingAddress])
+  @@map("follows")
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  streamId  String
+  userAddress String
+  message   String
+  isTip     Boolean  @default(false)
+  tipAmount Float?
+  createdAt DateTime @default(now())
+
+  // Relations
+  stream    Stream   @relation(fields: [streamId], references: [id])
+
+  @@map("chat_messages")
+}
+
+model NFT {
+  id        String   @id @default(cuid())
+  tokenId   String   @unique
+  ownerAddress String
+  type      String   // viewer, tipper, streamer
+  metadata  Json?
+  txHash    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  owner     User     @relation(fields: [ownerAddress], references: [address])
+
+  @@map("nfts")
+}

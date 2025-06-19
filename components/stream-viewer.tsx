@@ -18,6 +18,8 @@ import {
   Settings,
   Send,
 } from "lucide-react"
+import { useWeb3 } from "@/hooks/useWeb3"
+import { DEFAULT_RECIPIENT } from "@/lib/web3"
 
 interface Stream {
   id: string
@@ -28,6 +30,7 @@ interface Stream {
   thumbnail: string
   isLive: boolean
   tips: number
+  creatorAddress?: string
 }
 
 interface User {
@@ -78,12 +81,14 @@ export default function StreamViewer({ stream, user, onBack }: StreamViewerProps
       message: "Thanks for the alpha! 🚀",
       timestamp: new Date(Date.now() - 30000),
       isTip: true,
-      tipAmount: 25,
+      tipAmount: 0.01,
     },
   ])
 
   const [viewerCount, setViewerCount] = useState(stream.viewers)
   const [totalTips, setTotalTips] = useState(stream.tips)
+
+  const { sendTip: sendWeb3Tip, isLoading: isSendingTip, balance, isConnected, connectWallet } = useWeb3()
 
   // Simulate live viewer count changes
   useEffect(() => {
@@ -107,29 +112,52 @@ export default function StreamViewer({ stream, user, onBack }: StreamViewerProps
     setChatMessage("")
   }
 
-  const sendTip = () => {
-    const amount = Number.parseFloat(tipAmount)
-    if (!amount || amount <= 0 || amount > user.balance) return
-
-    const tipMessage: ChatMessage = {
-      id: Date.now().toString(),
-      username: "You",
-      message: `Sent a tip! Keep up the great work! 💰`,
-      timestamp: new Date(),
-      isTip: true,
-      tipAmount: amount,
+  const sendTip = async () => {
+    if (!isConnected) {
+      alert("Please connect your wallet first")
+      return
     }
 
-    setChatMessages((prev) => [...prev, tipMessage])
-    setTotalTips((prev) => prev + amount)
-    setTipAmount("")
-    setShowTipModal(false)
+    const amount = Number.parseFloat(tipAmount)
+    if (!amount || amount <= 0) {
+      alert("Please enter a valid tip amount")
+      return
+    }
 
-    // Show NFT reward notification (20% chance)
-    if (Math.random() < 0.2) {
-      setTimeout(() => {
-        alert("🎉 You earned a Generous Tipper NFT!")
-      }, 1000)
+    if (amount > balance) {
+      alert(`Insufficient balance. You have ${balance.toFixed(4)} ETH`)
+      return
+    }
+
+    try {
+      // Use the stream's creator address or fall back to the default recipient
+      const recipientAddress = stream.creatorAddress || DEFAULT_RECIPIENT
+
+      console.log("Sending tip:", { recipientAddress, amount })
+      const txHash = await sendWeb3Tip(recipientAddress, amount, stream.id)
+
+      const tipMessage: ChatMessage = {
+        id: Date.now().toString(),
+        username: "You",
+        message: `Sent a tip! Keep up the great work! 💰 (TX: ${txHash.slice(0, 10)}...)`,
+        timestamp: new Date(),
+        isTip: true,
+        tipAmount: amount,
+      }
+
+      setChatMessages((prev) => [...prev, tipMessage])
+      setTotalTips((prev) => prev + amount)
+      setTipAmount("")
+      setShowTipModal(false)
+
+      // Show success notification with Etherscan link
+      const etherscanUrl = `https://sepolia.etherscan.io/tx/${txHash}`
+      if (confirm(`🎉 Tip sent successfully!\n\nTransaction: ${txHash}\n\nClick OK to view on Etherscan`)) {
+        window.open(etherscanUrl, "_blank")
+      }
+    } catch (error: any) {
+      console.error("Tip error:", error)
+      alert(`❌ Failed to send tip: ${error.message}`)
     }
   }
 
@@ -145,10 +173,16 @@ export default function StreamViewer({ stream, user, onBack }: StreamViewerProps
             </Button>
 
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg">
-                <Coins className="w-4 h-4 text-yellow-400" />
-                <span className="text-white font-semibold">${user.balance.toFixed(2)} USDC</span>
-              </div>
+              {isConnected ? (
+                <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-lg">
+                  <Coins className="w-4 h-4 text-yellow-400" />
+                  <span className="text-white font-semibold">{balance.toFixed(4)} ETH</span>
+                </div>
+              ) : (
+                <Button onClick={connectWallet} className="bg-purple-600 hover:bg-purple-700">
+                  Connect Wallet
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -224,9 +258,13 @@ export default function StreamViewer({ stream, user, onBack }: StreamViewerProps
                       {isFollowing ? "Following" : "Follow"}
                     </Button>
 
-                    <Button onClick={() => setShowTipModal(true)} className="bg-yellow-600 hover:bg-yellow-700">
+                    <Button
+                      onClick={() => setShowTipModal(true)}
+                      className="bg-yellow-600 hover:bg-yellow-700"
+                      disabled={!isConnected}
+                    >
                       <Coins className="w-4 h-4 mr-2" />
-                      Tip USDC
+                      Tip ETH
                     </Button>
                   </div>
                 </div>
@@ -238,7 +276,7 @@ export default function StreamViewer({ stream, user, onBack }: StreamViewerProps
                   </div>
                   <div className="flex items-center gap-1">
                     <Coins className="w-4 h-4 text-yellow-400" />
-                    <span>${totalTips} in tips</span>
+                    <span>{totalTips.toFixed(4)} ETH in tips</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="ghost" className="text-gray-300 hover:text-white">
@@ -275,7 +313,7 @@ export default function StreamViewer({ stream, user, onBack }: StreamViewerProps
                           <div className="flex items-center gap-2 mb-1">
                             <Coins className="w-4 h-4 text-yellow-400" />
                             <span className="font-semibold text-yellow-400">{msg.username}</span>
-                            <span className="text-yellow-300">tipped ${msg.tipAmount}</span>
+                            <span className="text-yellow-300">tipped {msg.tipAmount} ETH</span>
                           </div>
                           <div className="text-white">{msg.message}</div>
                         </div>
@@ -346,38 +384,42 @@ export default function StreamViewer({ stream, user, onBack }: StreamViewerProps
             <CardHeader>
               <CardTitle className="text-white flex items-center gap-2">
                 <Coins className="w-6 h-6 text-yellow-400" />
-                Send USDC Tip
+                Send ETH Tip
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-center">
                 <div className="text-lg text-white mb-2">Tip {stream.creator}</div>
-                <div className="text-gray-300 text-sm">Show your support with USDC</div>
+                <div className="text-gray-300 text-sm">Show your support with ETH</div>
+                <div className="text-xs text-gray-400 mt-1 font-mono">
+                  Recipient: {(stream.creatorAddress || DEFAULT_RECIPIENT).slice(0, 10)}...
+                  {(stream.creatorAddress || DEFAULT_RECIPIENT).slice(-8)}
+                </div>
               </div>
 
               <div className="space-y-3">
                 <div className="grid grid-cols-4 gap-2">
-                  {[5, 10, 25, 50].map((amount) => (
+                  {[0.001, 0.005, 0.01, 0.05].map((amount) => (
                     <Button
                       key={amount}
                       variant="outline"
                       onClick={() => setTipAmount(amount.toString())}
-                      className="text-white border-white/30"
+                      className="text-white border-white/30 hover:bg-white/10 hover:border-white/50 hover:text-white"
                     >
-                      ${amount}
+                      {amount} ETH
                     </Button>
                   ))}
                 </div>
 
                 <Input
-                  placeholder="Custom amount"
+                  placeholder="Custom amount (ETH)"
                   value={tipAmount}
                   onChange={(e) => setTipAmount(e.target.value)}
                   className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
                 />
               </div>
 
-              <div className="text-sm text-gray-300">Balance: ${user.balance.toFixed(2)} USDC</div>
+              <div className="text-sm text-gray-300">Balance: {balance.toFixed(4)} ETH</div>
 
               <div className="flex gap-3">
                 <Button
@@ -390,11 +432,15 @@ export default function StreamViewer({ stream, user, onBack }: StreamViewerProps
                 <Button
                   onClick={sendTip}
                   disabled={
-                    !tipAmount || Number.parseFloat(tipAmount) <= 0 || Number.parseFloat(tipAmount) > user.balance
+                    !tipAmount ||
+                    Number.parseFloat(tipAmount) <= 0 ||
+                    Number.parseFloat(tipAmount) > balance ||
+                    isSendingTip ||
+                    !isConnected
                   }
                   className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Send Tip
+                  {isSendingTip ? "Sending..." : "Send Tip"}
                 </Button>
               </div>
             </CardContent>
